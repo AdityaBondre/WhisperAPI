@@ -18,24 +18,27 @@ app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
 # Function to summarize text using Ollama
 def summarize_text(text):
+    if not text or len(text.strip()) < 10:  # If transcription is null or too short, return as-is
+        return text
+
     try:
         response = ollama.chat(
-            model="smollm2:360m",  # Use the smollm2:360m model
+            model="mistral",  # Upgraded to a more powerful model
             messages=[
                 {
                     "role": "system",
-                    "content": "You are a helpful assistant that summarizes medical consultations. Focus only on the patient's problems and the doctor's observations or recommendations. Exclude casual talk, greetings, and unrelated details. Provide the summary in concise bullet points."
+                    "content": "You are a helpful assistant that summarizes medical consultations. Focus only on the patient's symptoms and the doctor's diagnosis or treatment recommendations. Exclude all casual talk and unrelated details. Provide the summary in 3-5 concise bullet points."
                 },
                 {
                     "role": "user",
-                    "content": f"Summarize the following doctor-patient conversation in bullet points, focusing only on the patient's problems and the doctor's observations or recommendations:\n\n{text}"
+                    "content": f"Summarize the following doctor-patient conversation in 3-5 bullet points, focusing only on the patient's symptoms and the doctor's diagnosis or treatment recommendations:\n\n{text}"
                 }
             ]
         )
-        return response.get("message", {}).get("content", "No summary found")
+        return response.get("message", {}).get("content", text)  # Return summary or original text
     except Exception as e:
-        return f"Summarization failed: {str(e)}"
-    
+        return text  # If summarization fails, return original text
+
 @app.route("/transcribe", methods=["POST"])
 def transcribe():
     if "file" not in request.files:
@@ -49,20 +52,18 @@ def transcribe():
     try:
         # 🎧 Transcribe audio using Whisper
         result = model.transcribe(filepath)
-        transcription = result.get("text", "No transcription found")
+        transcription = result.get("text", "").strip()
         print("🎧 Transcription:", transcription)
 
-        # 📝 Summarize using Ollama with smollm2:360m
+        # If transcription is empty, return it directly
+        if not transcription:
+            return jsonify({"summary": transcription})
+
+        # 📝 Summarize using Ollama (mistral)
         summary = summarize_text(transcription)
         print("📝 Summary:", summary)
 
-        # Fallback if summarization fails or quality is poor
-        if "Summarization failed" in summary or len(summary.strip()) < 10:  # Adjust threshold as needed
-            summary = "Summary unavailable. Here's the full transcription:\n\n" + transcription
-
-        return jsonify({
-            "summary": summary  # Return summary or fallback transcription
-        })
+        return jsonify({"summary": summary})
 
     except Exception as e:
         return jsonify({"error": f"Processing failed: {str(e)}"}), 500
